@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build: .
+    container_name: stylesync-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=False
+      - DATABASE_URL=postgresql://stylesync:stylesync123@db:5432/stylesync
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_BACKEND_STORE_URI=postgresql://stylesync:stylesync123@db:5432/mlflow
+      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./mlruns:/app/mlruns
+    depends_on:
+      - db
+      - mlflow
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
+  # Streamlit Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: stylesync-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://backend:8000
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    volumes:
+      - ./frontend:/app/frontend
+      - ./data:/app/data
+    depends_on:
+      - backend
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: stylesync-db
+    environment:
+      - POSTGRES_USER=stylesync
+      - POSTGRES_PASSWORD=stylesync123
+      - POSTGRES_DB=stylesync
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
+  # MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: stylesync-mlflow
+    command: mlflow server --backend-store-uri postgresql://stylesync:stylesync123@db:5432/mlflow --default-artifact-root /mlflow/artifacts --host 0.0.0.0
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlflow/artifacts
+    depends_on:
+      - db
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
+  # Redis Cache (optional, for future phases)
+  redis:
+    image: redis:7-alpine
+    container_name: stylesync-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  stylesync-network:
+    driver: bridge

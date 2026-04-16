@@ -1,0 +1,41 @@
+# Core Web Framework
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+
+# Scientific Computing & ML
+numpy
+pillow
+opencv-python
+torch
+torchvision
+scikit-learn
+scipy
+
+# Model Components
+faiss-cpu
+transformers
+tqdm
+
+# Frontend
+streamlit
+
+# Database & ORM
+psycopg2-binary
+sqlalchemy
+
+# MLOps & Tracking
+mlflow
+
+# Utilities
+requests
+python-dotenv
+pyyaml
+pandas
+matplotlib
+
+# Visualization & Monitoring
+tensorboard
+plotly
