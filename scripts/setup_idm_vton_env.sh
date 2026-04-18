@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${1:-/home/m25csa007/Mlops_project/external/IDM-VTON}"
+REPO_DIR="${1:-/home/m25csa007/Mlops_project/backend/idm_vton}"
 VENV_DIR="${2:-$REPO_DIR/.venv_idm}"
 
 if [[ ! -d "$REPO_DIR" ]]; then
-  echo "IDM-VTON repo not found at: $REPO_DIR"
-  echo "Clone it first: git clone https://github.com/yisol/IDM-VTON.git $REPO_DIR"
+  echo "Vendored IDM-VTON tree not found at: $REPO_DIR"
+  echo "Expected backend-local path (copied from official IDM-VTON)."
   exit 1
 fi
 
@@ -48,7 +48,7 @@ Repo: $REPO_DIR
 Python: $VENV_DIR/bin/python
 
 Recommended exports:
-  export IDM_VTON_REPO_PATH="$REPO_DIR"
+  export IDM_VTON_LOCAL_REPO_PATH="$REPO_DIR"
   export IDM_VTON_PYTHON_BIN="$VENV_DIR/bin/python"
   export IDM_VTON_USE_ACCELERATE=false
 

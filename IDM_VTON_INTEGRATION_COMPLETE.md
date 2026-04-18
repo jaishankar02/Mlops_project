@@ -54,20 +54,21 @@
 ### Modified/Created Files
 ```
 ml_models/tryon/
-  └─ idm_vton_wrapper.py       [REWRITTEN] Local repo integration
-  
+  └─ idm_vton_wrapper.py       [REWRITTEN] Backend-local vendored integration
+
 backend/routes/
   └─ tryon.py                   [UNCHANGED] Works with wrapper
 
+backend/idm_vton/
+  ├─ src/
+  ├─ preprocess/
+  ├─ gradio_demo/
+  ├─ ip_adapter/
+  ├─ configs/
+  └─ ckpt/
+
 config/
   └─ settings.py                [COMPATIBLE] IDM_VTON settings
-  
-external/
-  └─ IDM-VTON/                  [USED] Official repo with src/
-     └─ src/
-        ├─ tryon_pipeline.py
-        ├─ unet_hacked_*.py
-        └─ [other components]
 ```
 
 ### Dependencies Patched

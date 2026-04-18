@@ -1,6 +1,6 @@
 """IDM-VTON integration wrapper.
 
-This wrapper uses the pre-cloned external/IDM-VTON repository to run the official pipeline.
+This wrapper uses a backend-local vendored IDM-VTON tree under backend/idm_vton.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _env_flag(name: str, default: bool) -> bool:
 
 
 class IDMVTONWrapper:
-    """IDM-VTON wrapper using external/IDM-VTON repository."""
+    """IDM-VTON wrapper using backend-local vendored repository."""
 
     def __init__(self) -> None:
         self.enabled = settings.IDM_VTON_ENABLED
@@ -42,7 +42,12 @@ class IDMVTONWrapper:
         self.auto_mask = _env_flag("IDM_VTON_AUTO_MASK", True)
         self.use_crop = _env_flag("IDM_VTON_USE_CROP", False)
 
-        self.repo_path = Path(__file__).parent.parent.parent / "external" / "IDM-VTON"
+        local_repo = os.getenv("IDM_VTON_LOCAL_REPO_PATH", "").strip()
+        if local_repo:
+            self.repo_path = Path(local_repo)
+        else:
+            # Project root is two levels above ml_models/tryon.
+            self.repo_path = Path(__file__).resolve().parents[2] / "backend" / "idm_vton"
         self._demo_instance = None
         self._snapshot_path = None
 
@@ -59,7 +64,7 @@ class IDMVTONWrapper:
             return self._demo_instance
 
         if not self.repo_path.exists():
-            logger.warning("IDM-VTON repo not found at %s", self.repo_path)
+            logger.warning("Vendored IDM-VTON repo not found at %s", self.repo_path)
             return None
 
         try:
