@@ -38,41 +38,73 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+.python-version
+.ruff_cache/
+.mypy_cache/
+.nox/
+.tox/
 
 # Logs
 logs/
 *.log
 
-# Data and models
-data/
-models/
+# Runtime / generated outputs
 mlruns/
-*.db
-*.faiss
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-
-# Docker
-.docker/
-
-# Coverage
-.coverage
+wandb/
+.streamlit/
 htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+
+# Local environment and build artifacts
+.venv/
+env/
+venv/
+ENV/
+dist/
+build/
+site/
+*.egg-info/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Data artifacts that are generated locally and should not be committed
+data/
+data/kaggle_downloads/
+data/datasets/
+data/raw/
+data/splits/
+data/feature_store/
+data/versions/
+data/tmp/
+data/cache/
+models/
+artifacts/
+external/
+checkpoints-*/
+outputs/
+journey/
+
+# Local databases and SQLite scratch files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+mlflow.db
 
 # pytest
 .pytest_cache/
 
-# MLflow
-mlflow.db
-
-# Streamlit
-.streamlit/
-
-# CI/CD
-.github/
-
 # OS
-.DS_Store
 Thumbs.db
+
+# Keep GitHub workflow files tracked; do not ignore .github/

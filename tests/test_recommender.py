@@ -42,6 +42,65 @@ class TestRecommendationEngine:
         extractor = CLIPFeatureExtractor()
         assert extractor is not None
 
+    def test_search_applies_threshold_and_dedup(self):
+        """Search should filter low scores and suppress duplicate assets."""
+        import numpy as np
+        import faiss
+        from PIL import Image
+        from ml_models.recommender.recommendation_engine import RecommendationEngine
+
+        class DummyExtractor:
+            def extract_image_features(self, _image):
+                return np.array([[1.0, 0.0]], dtype=np.float32)
+
+        engine = RecommendationEngine(feature_dim=2)
+        engine.feature_extractor = DummyExtractor()
+        engine.index = faiss.IndexFlatIP(2)
+
+        vectors = np.array(
+            [
+                [1.0, 0.0],
+                [0.99, 0.01],
+                [0.65, 0.75],
+            ],
+            dtype=np.float32,
+        )
+        faiss.normalize_L2(vectors)
+        engine.index.add(vectors)
+
+        engine.metadata = [
+            {
+                "garment_id": "g1",
+                "metadata": {
+                    "filename": "same.png",
+                    "dominant_color_rgb": [1.0, 0.0, 0.0],
+                },
+            },
+            {
+                "garment_id": "g2",
+                "metadata": {
+                    "filename": "same.png",
+                    "dominant_color_rgb": [1.0, 0.0, 0.0],
+                },
+            },
+            {
+                "garment_id": "g3",
+                "metadata": {
+                    "filename": "other.png",
+                    "dominant_color_rgb": [0.0, 0.0, 1.0],
+                },
+            },
+        ]
+
+        query = Image.new("RGB", (128, 128), color="red")
+        results = engine.search_similar(query, k=3, min_similarity=0.70)
+
+        assert len(results) >= 1
+        # Duplicate filename should be collapsed to a single result.
+        assert len({r["garment_id"] for r in results if r["garment_id"] in {"g1", "g2"}}) == 1
+        for result in results:
+            assert result["similarity_score"] >= 0.70
+
 
 class TestImageProcessing:
     """Test image processing utilities."""

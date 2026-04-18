@@ -3,7 +3,6 @@ Feature extraction using CLIP model for fashion recommendations.
 """
 import torch
 import torch.nn as nn
-from torchvision import transforms
 from PIL import Image
 import numpy as np
 import logging
@@ -77,6 +76,7 @@ class ResNetFeatureExtractor:
         """Initialize ResNet50 for feature extraction."""
         try:
             from torchvision.models import resnet50
+            from torchvision import transforms
             self.device = device
             self.model = resnet50(pretrained=True)
             # Remove classification layer

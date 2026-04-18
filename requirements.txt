@@ -1,71 +1,89 @@
+# Core application stack
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 python-multipart==0.0.6
+streamlit==1.28.1
+
+# Scientific computing and computer vision
 numpy==1.24.3
 pillow==10.1.0
 opencv-python==4.8.1.78
-torch==2.1.2
-torchvision==0.16.2
-streamlit==1.28.1
+mediapipe==0.10.8
 scikit-learn==1.3.2
 scipy==1.11.4
+
+# PyTorch and feature extraction
+torch==2.1.2
+torchvision==0.16.2
 faiss-cpu==1.7.4
+transformers==4.35.2
+diffusers==0.27.2
+accelerate==0.29.3
+safetensors==0.4.3
+einops==0.7.0
+huggingface-hub==0.26.2
+timm==0.9.8
+tqdm==4.66.1
+clip @ git+https://github.com/openai/CLIP.git
+ftfy==6.2.3
+regex==2024.5.15
+
+# Try-on / demo stack
+gradio==4.44.1
+gradio_client==2.4.1
+fvcore==0.1.5.post20221221
+pycocotools==2.0.7
+# Detectron2 is platform-specific; install a wheel that matches your CUDA/PyTorch build.
+
+# Backend, persistence, and database access
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.23
 alembic==1.13.0
+
+# Experiment tracking and observability
 mlflow==2.10.0
 wandb==0.16.1
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.2
-requests==2.31.0
-python-dotenv==1.0.0
-pyyaml==6.0.1
-logging-config==0.5.3
-transformers==4.35.2
-clip-by-openai==1.0.1
-timm==0.9.8
-tqdm==4.66.1
-
-# MLOps & Model Management
 tensorboard==2.14.1
+prometheus-client==0.19.0
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+
+# Data versioning and ML lifecycle
+dvc[s3]==3.38.1
+dvc-plots==2.1.2
+dvc-data==0.59.6
+optuna==3.14.0
+hydra-core==1.3.4
+
+# Data quality and validation
+category-encoders==2.6.1
+imbalanced-learn==0.11.0
+evidently==0.4.7
+alibi-detect==0.11.4
+great-expectations==0.18.12
+pandera==0.17.1
+
+# Analytics and reporting
 pandas==2.1.3
 matplotlib==3.8.2
 seaborn==0.13.0
 plotly==5.18.0
 
-# Data Versioning & Management
-dvc[s3]==3.38.1
-dvc-plots==2.1.2
-dvc-data==0.59.6
+# Utilities
+requests==2.31.0
+python-dotenv==1.0.0
+PyYAML==6.0.1
+logging-config==0.5.3
 
-# Feature Engineering
-category_encoders==2.6.1
-imbalanced-learn==0.11.0
-
-# Model Monitoring & Drift Detection
-evidently==0.4.7
-alibi-detect==0.11.4
-
-# Experiment Tracking & Hyperparameter Tuning
-optuna==3.14.0
-hydra-core==1.3.4
-
-# Data Quality & Validation
-great-expectations==0.18.12
-pandera==0.17.1
-
-# Deployment & Serving
-ray==2.10.0
-ray-serve==2.10.0
-
-# Monitoring & Logging
-prometheus-client==0.19.0
-opentelemetry-api==1.21.0
-opentelemetry-sdk==1.21.0
-
-# Documentation
+# Testing and local development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
 nbconvert==7.14.0
 jupyterlab==4.0.9
+
+# Compatibility pin for older wandb imports that rely on pkg_resources
+setuptools<81
+

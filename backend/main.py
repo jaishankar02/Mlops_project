@@ -15,6 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import Settings
 from backend.routes import recommender
+from backend.routes import tryon
+from config.huggingface_config import get_huggingface_client
+from config.mlflow_config import get_mlflow_tracker
+from config.wandb_config import get_wandb_tracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +32,14 @@ settings = Settings()
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources."""
     logger.info("Application startup")
+    get_mlflow_tracker().setup_environment()
+    get_wandb_tracker().setup_wandb()
+    get_huggingface_client()
     yield
+    try:
+        get_wandb_tracker().finish()
+    except Exception:
+        pass
     logger.info("Application shutdown")
 
 
@@ -51,6 +62,7 @@ app.add_middleware(
 
 # Include routes
 app.include_router(recommender.router, prefix="/api/recommender", tags=["recommender"])
+app.include_router(tryon.router, prefix="/api/tryon", tags=["tryon"])
 
 
 @app.get("/")
@@ -59,7 +71,7 @@ async def read_root():
     return {
         "status": "OK",
         "service": "StyleSync Recommender API",
-        "phase": "Phase 1 - Recommender Only",
+        "phase": "Phase 1 - Recommender + Scoped Try-On Fallback",
         "version": "1.0.0"
     }
 

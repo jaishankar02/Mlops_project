@@ -14,6 +14,7 @@ from ml_models.model_registry import get_model_registry, ModelStatus
 from ml_models.evaluation import ModelEvaluator, TrainingPipeline, ModelMonitor
 from ml_models.batch_prediction import ExperimentTracker, ModelCardGenerator
 from config.mlflow_config import get_mlflow_tracker
+from config.wandb_config import log_wandb_event
 from config.settings import settings
 import json
 
@@ -41,6 +42,16 @@ def train_and_evaluate():
     tracker = ExperimentTracker()
     evaluator = ModelEvaluator()
     mlflow_tracker = get_mlflow_tracker()
+    mlflow_tracker.setup_environment()
+    mlflow_tracker.start_run(
+        run_name="clip_recommender_training",
+        params={
+            "model_type": "clip",
+            "feature_dim": 512,
+            "num_samples": 2000,
+            "similarity_metric": "cosine",
+        },
+    )
     
     # Create synthetic data
     print("\n📊 Preparing Data...")
@@ -70,6 +81,11 @@ def train_and_evaluate():
         }
     )
     print(f"  ✓ Experiment ID: {exp_id}")
+    log_wandb_event("training_started", {
+        "experiment_id": exp_id,
+        "model_type": "clip",
+        "feature_dim": 512,
+    })
     
     # Simulate training metrics
     print("\n📈 Training Phase...")
@@ -87,6 +103,10 @@ def train_and_evaluate():
             f"epoch_{epoch}_val_loss": 0.22 - (epoch * 0.01),
         }
         tracker.log_experiment_metrics(exp_id, epoch_metrics)
+        log_wandb_event("epoch_metrics", {
+            "experiment_id": exp_id,
+            **epoch_metrics,
+        })
         print(f"  ✓ Epoch {epoch}: Loss={epoch_metrics[f'epoch_{epoch}_loss']:.4f}")
     
     # Evaluation
@@ -111,6 +131,10 @@ def train_and_evaluate():
     
     # Log evaluation metrics
     tracker.log_experiment_metrics(exp_id, eval_metrics)
+    log_wandb_event("evaluation_metrics", {
+        "experiment_id": exp_id,
+        **eval_metrics,
+    })
     
     # Model monitoring
     print("\n📊 Model Monitoring...")
@@ -171,12 +195,19 @@ def train_and_evaluate():
     results_path.parent.mkdir(exist_ok=True)
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
+    mlflow_tracker.log_artifact(str(results_path), artifact_path="reports")
+    mlflow_tracker.log_artifact(str(model_card_path), artifact_path="model_cards")
     
     # Log to MLflow
     mlflow_tracker.log_event("training_completed", {
         "experiment_id": exp_id,
         "num_epochs": training_metrics["epochs"],
         "best_val_loss": training_metrics["val_loss"]
+    })
+    log_wandb_event("training_completed", {
+        "experiment_id": exp_id,
+        "num_epochs": training_metrics["epochs"],
+        "best_val_loss": training_metrics["val_loss"],
     })
     
     print("\n" + "="*70)
@@ -190,6 +221,15 @@ def train_and_evaluate():
     print(f"  - Precision@5: {eval_metrics.get('precision@5', 0):.4f}")
     print(f"  - Avg Inference Time: {perf_stats.get('avg_inference_time_ms', 0):.2f}ms")
     print("\n" + "="*70 + "\n")
+
+    mlflow_tracker.log_metrics_batch({
+        "train_loss": float(training_metrics["train_loss"]),
+        "val_loss": float(training_metrics["val_loss"]),
+        "recall@5": float(eval_metrics.get("recall@5", 0)),
+        "precision@5": float(eval_metrics.get("precision@5", 0)),
+        "avg_inference_time_ms": float(perf_stats.get("avg_inference_time_ms", 0)),
+    })
+    mlflow_tracker.end_run()
     
     return exp_id
 

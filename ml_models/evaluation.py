@@ -42,7 +42,7 @@ class ModelEvaluator:
             k_values = [1, 5, 10]
         
         try:
-            from sklearn.metrics import ndcg_score, mean_reciprocal_rank
+            from sklearn.metrics import ndcg_score
             
             metrics = {}
             
@@ -74,8 +74,8 @@ class ModelEvaluator:
                 metrics[f"ndcg@{k}"] = ndcg
             
             # Aggregate metrics
-            metrics["avg_recall"] = np.mean([v for k, v in metrics.items() if "recall" in k])
-            metrics["avg_precision"] = np.mean([v for k, v in metrics.items() if "precision" in k])
+            metrics["avg_recall"] = float(np.mean([v for key, v in metrics.items() if "recall" in key]))
+            metrics["avg_precision"] = float(np.mean([v for key, v in metrics.items() if "precision" in key]))
             
             logger.info(f"Evaluation metrics: {metrics}")
             return metrics

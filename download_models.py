@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from ml_models.model_registry import get_model_registry, PRETRAINED_MODELS
 from config.mlflow_config import get_mlflow_tracker
 from config.settings import settings
+from config.wandb_config import log_wandb_event
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ def download_models():
     """Download all recommended pretrained models."""
     registry = get_model_registry()
     mlflow_tracker = get_mlflow_tracker()
+    mlflow_tracker.setup_environment()
     
     print("\n" + "="*70)
     print("StyleSync: MLOps Pipeline - Model Download & Setup")
@@ -42,6 +44,15 @@ def download_models():
     
     downloaded_models = {}
     failed_models = {}
+
+    mlflow_tracker.start_run(
+        run_name="download_pretrained_models",
+        params={
+            "selected_models": ",".join(["clip-vit-b-32", "resnet50"]),
+            "tracking_uri": settings.MLFLOW_TRACKING_URI,
+            "experiment": settings.MLFLOW_EXPERIMENT_NAME,
+        },
+    )
     
     for model_name in ["clip-vit-b-32", "resnet50"]:  # Download core models
         try:
@@ -58,6 +69,11 @@ def download_models():
                     "path": str(model_path),
                     "size_mb": PRETRAINED_MODELS[model_name]["size_mb"]
                 })
+                log_wandb_event("model_download", {
+                    "model_name": model_name,
+                    "size_mb": PRETRAINED_MODELS[model_name]["size_mb"],
+                })
+                mlflow_tracker.log_artifact(str(model_path), artifact_path=f"pretrained/{model_name}")
             else:
                 failed_models[model_name] = "Download failed"
                 
@@ -88,6 +104,12 @@ def download_models():
     print("2. Access Streamlit UI: http://localhost:8501")
     print("3. Monitor MLflow: http://localhost:5000")
     print("\n" + "="*70 + "\n")
+
+    mlflow_tracker.log_metrics_batch({
+        "downloaded_count": float(len(downloaded_models)),
+        "failed_count": float(len(failed_models)),
+    })
+    mlflow_tracker.end_run()
     
     return len(downloaded_models) > 0
 

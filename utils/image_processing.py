@@ -20,8 +20,8 @@ def validate_image(image: Image.Image) -> bool:
         True if valid, False otherwise
     """
     try:
-        # Check format
-        if image.format not in settings.SUPPORTED_FORMATS:
+        # Check format when available; in-memory test images often have None here.
+        if image.format is not None and image.format not in settings.SUPPORTED_FORMATS:
             logger.warning(f"Unsupported image format: {image.format}")
             return False
         

@@ -11,6 +11,13 @@ from typing import Dict, Any, Optional
 import hashlib
 import urllib.request
 
+from config.settings import settings
+
+try:
+    from config.huggingface_config import get_huggingface_client
+except Exception:  # pragma: no cover - optional dependency wiring
+    get_huggingface_client = None
+
 logger = logging.getLogger(__name__)
 
 # Model registry with pretrained models
@@ -19,6 +26,8 @@ PRETRAINED_MODELS = {
         "name": "CLIP ViT-B/32",
         "description": "Vision Transformer model trained with contrastive learning",
         "url": "https://openaipublic.blob.core.windows.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58aaad624a/ViT-B-32.pt",
+        "huggingface_repo": "openai/clip-vit-base-patch32",
+        "huggingface_filename": "pytorch_model.bin",
         "task": "feature_extraction",
         "framework": "pytorch",
         "input_size": 224,
@@ -41,6 +50,8 @@ PRETRAINED_MODELS = {
         "name": "ResNet50",
         "description": "Residual Network with 50 layers for image classification",
         "url": "https://download.pytorch.org/models/resnet50-0676ba61.pth",
+        "huggingface_repo": "microsoft/resnet-50",
+        "huggingface_filename": "pytorch_model.bin",
         "task": "feature_extraction",
         "framework": "pytorch",
         "input_size": 224,
@@ -52,6 +63,8 @@ PRETRAINED_MODELS = {
         "name": "EfficientNet-B0",
         "description": "Efficient neural network for mobile and edge devices",
         "url": "https://download.pytorch.org/models/efficientnet_b0_rwightman-3dd342df.pth",
+        "huggingface_repo": "google/efficientnet-b0",
+        "huggingface_filename": "pytorch_model.bin",
         "task": "feature_extraction",
         "framework": "pytorch",
         "input_size": 224,
@@ -94,10 +107,13 @@ class ModelRegistry:
         self.registry = self._load_registry()
         
         # MLflow integration
-        self.mlflow_uri = mlflow_tracking_uri
-        if mlflow_tracking_uri:
-            import mlflow
-            mlflow.set_tracking_uri(mlflow_tracking_uri)
+        self.mlflow_uri = mlflow_tracking_uri or settings.MLFLOW_TRACKING_URI
+        if self.mlflow_uri:
+            try:
+                import mlflow
+                mlflow.set_tracking_uri(self.mlflow_uri)
+            except Exception as exc:
+                logger.warning(f"Could not configure MLflow URI: {exc}")
         
         logger.info(f"Model Registry initialized at {self.registry_dir}")
     
@@ -158,7 +174,7 @@ class ModelRegistry:
                 "file_hash": file_hash,
                 "size_mb": model_path.stat().st_size / (1024 * 1024),
                 "metadata": metadata or {},
-                "registered_at": str(Path(self.metadata_file).stat().st_mtime),
+                "registered_at": __import__("datetime").datetime.utcnow().isoformat(),
             }
             
             self._save_registry()
@@ -219,11 +235,29 @@ class ModelRegistry:
         
         model_info = PRETRAINED_MODELS[model_name]
         model_path = self.models_dir / f"{model_name}.pt"
+        prefer_hf = settings.HF_MODEL_SOURCE.lower() in {"hf", "huggingface", "hub"}
+        hf_repo = model_info.get("huggingface_repo")
+        hf_filename = model_info.get("huggingface_filename", "model.safetensors")
         
         # Check if already downloaded
         if model_path.exists() and not force:
             logger.info(f"Model {model_name} already exists at {model_path}")
             return model_path
+
+        if prefer_hf and hf_repo and get_huggingface_client is not None:
+            hf_client = get_huggingface_client()
+            hf_path = hf_client.download_file(hf_repo, hf_filename)
+            if hf_path is not None:
+                logger.info(f"Downloaded {model_name} from Hugging Face to {hf_path}")
+                self.register_model(
+                    model_id=model_name,
+                    model_path=str(hf_path),
+                    task=model_info["task"],
+                    framework=model_info["framework"],
+                    metadata={**model_info, "source": "huggingface"},
+                    status=ModelStatus.PRODUCTION,
+                )
+                return hf_path
         
         # Download
         try:
@@ -237,7 +271,7 @@ class ModelRegistry:
                 model_path=str(model_path),
                 task=model_info["task"],
                 framework=model_info["framework"],
-                metadata=model_info,
+                metadata={**model_info, "source": "direct"},
                 status=ModelStatus.PRODUCTION
             )
             
@@ -258,13 +292,37 @@ class ModelRegistry:
     def _log_to_mlflow(self, model_id: str, model_info: Dict[str, Any]):
         """Log model to MLflow registry."""
         try:
-            import mlflow
-            mlflow.start_run()
-            mlflow.log_params({"model_id": model_id, "framework": model_info["framework"]})
-            mlflow.log_metrics(model_info.get("metrics", {}))
-            mlflow.end_run()
+            from config.mlflow_config import get_mlflow_tracker
+
+            tracker = get_mlflow_tracker()
+            tracker.setup_environment()
+            tracker.start_run(
+                run_name=f"register::{model_id}",
+                params={
+                    "model_id": model_id,
+                    "framework": model_info["framework"],
+                    "task": model_info.get("task", "unknown"),
+                    "status": model_info.get("status", "unknown"),
+                },
+            )
+            tracker.log_metrics_batch(model_info.get("metrics", {}))
+            tracker.log_event("model_registered", {
+                "model_id": model_id,
+                "framework": model_info["framework"],
+                "task": model_info.get("task", "unknown"),
+            })
+            tracker.end_run()
         except Exception as e:
             logger.warning(f"Could not log to MLflow: {e}")
+
+    def download_tryon_checkpoint(self, repo_id: str, filename: str) -> Optional[Path]:
+        """Download a try-on checkpoint from Hugging Face when configured."""
+        if get_huggingface_client is None:
+            logger.warning("Hugging Face helpers are unavailable")
+            return None
+
+        hf_client = get_huggingface_client()
+        return hf_client.download_file(repo_id=repo_id, filename=filename)
 
 
 # Global registry instance

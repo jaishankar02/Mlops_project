@@ -19,6 +19,7 @@ class RecommendationResult(BaseModel):
     garment_id: str = Field(..., description="ID of recommended garment")
     similarity_score: float = Field(..., ge=0, le=1, description="Similarity score (0-1)")
     metadata: Optional[Dict[str, Any]] = None
+    image_base64: Optional[str] = None
 
 
 class RecommendationResponse(BaseModel):
@@ -65,6 +66,16 @@ class IndexStatsResponse(BaseModel):
     model_type: str
     index_size_mb: float
     last_updated: Optional[datetime] = None
+
+
+class TryOnResponse(BaseModel):
+    """Response for virtual try-on generation."""
+    status: str = Field(default="success")
+    model_used: str
+    fallback_used: bool
+    processing_time_ms: float
+    result_image_base64: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ErrorResponse(BaseModel):

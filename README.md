@@ -6,10 +6,11 @@ A full-stack MLOps project for visual fashion recommendations and realistic virt
 
 ### Components
 1. **Recommender Branch**: Garment image upload → Feature extraction (CLIP/ResNet) → Vector database (FAISS) → Similar items suggestion
-2. **Try-On Branch**: User photo + Selected garment → Preprocessing → Efficient GAN model → Synthesized try-on image
-3. **Fallback Mechanism**: SimpleTransform-based try-on when GAN models are resource-constrained
-4. **Experiment Tracking**: MLflow for tracking model performance metrics
-5. **CI/CD**: GitHub Actions for automated testing and deployment
+2. **Try-On Branch**: User photo + Selected garment → Preprocessing → GAN checkpoint when available → Synthesized try-on image
+3. **Fallback Mechanism**: SimpleTransform-based try-on when GAN checkpoints or GPU resources are unavailable
+4. **Experiment Tracking**: MLflow plus WandB for tracking model performance metrics
+5. **Model Hub Integration**: Optional Hugging Face checkpoint downloads for try-on and model artifacts
+6. **CI/CD**: GitHub Actions for automated testing and deployment
 
 ### Technology Stack
 - **Backend**: FastAPI with Python 3.9+
@@ -18,7 +19,8 @@ A full-stack MLOps project for visual fashion recommendations and realistic virt
   - Recommender: CLIP/ResNet50 (pretrained)
   - Try-On: Lightweight GAN (HR-VITON / PF-AFN) + SimpleTransform Fallback
 - **Database**: FAISS for vector search + PostgreSQL for metadata
-- **Experiment Tracking**: MLflow
+- **Experiment Tracking**: MLflow + Weights & Biases
+- **Model Hub**: Hugging Face Hub support for optional checkpoint downloads
 - **Deployment**: Docker + GCP Compute Engine (T4 GPUs)
 - **API**: FastAPI with async support
 
@@ -128,7 +130,7 @@ mlops_project_new/
 - **Fallback mechanism ready**: SimpleTransform implementation prepared
 - **Extensible architecture**: Easy to integrate Phase 2 models
 
-### 📋 Phase 2 Features (Ready to Implement)
+### 📋 Phase 2 Features (Scoped In with a Fallback)
 - **Efficient GAN Models**
   - HR-VITON/PF-AFN architectures
   - FP16 precision optimization
@@ -138,6 +140,11 @@ mlops_project_new/
   - Automatic GAN→SimpleTransform switching
   - No service degradation
   - Graceful performance trade-off
+
+- **Tracking and Distribution**
+   - MLflow and WandB logging
+   - Hugging Face checkpoint downloads
+   - Reproducible artifact handling
 
 - **Advanced Try-On**
   - Pose detection for alignment
@@ -194,6 +201,30 @@ streamlit run frontend/app.py
 ```
 
 ## Phase 1 Features & Usage
+
+### Use Your Garment Dataset
+The project defaults now assume a generic garment dataset layout:
+
+```bash
+/data/m25csa007/datasets/high_resolution_viton_zalando/
+   train/cloth
+   test/cloth
+```
+
+Build the recommender FAISS index from the cloth images in that dataset:
+
+```bash
+source .venv/bin/activate
+export PYTHONPATH=$PWD:$PYTHONPATH
+python scripts/build_faiss_from_kaggle_viton.py --skip-download --extract-dir /data/m25csa007/datasets/high_resolution_viton_zalando --limit 5000
+```
+
+You can override dataset paths via env vars:
+
+```bash
+export RECOMMENDER_DATASET_DIR=/your/dataset/root/test/cloth
+export TRYON_TRAIN_DATASET_DIR=/your/dataset/root/train/cloth
+```
 
 ### Feature Extraction
 ```python
@@ -258,6 +289,12 @@ curl http://localhost:8000/api/recommender/stats
 
 # API docs
 curl http://localhost:8000/docs
+
+# Try-on fallback endpoint
+curl -X POST \
+   -F "person_file=@person.jpg" \
+   -F "garment_file=@garment.jpg" \
+   "http://localhost:8000/api/tryon/generate?use_gan=false"
 ```
 
 ## Experiment Tracking with MLflow
