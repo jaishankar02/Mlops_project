@@ -32,7 +32,8 @@ settings = Settings()
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources."""
     logger.info("Application startup")
-    get_mlflow_tracker().setup_environment()
+    # Keep startup readiness independent of external tracking availability.
+    # MLflow initialization is handled lazily during event logging.
     get_wandb_tracker().setup_wandb()
     get_huggingface_client()
     yield
