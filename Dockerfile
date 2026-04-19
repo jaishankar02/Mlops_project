@@ -23,7 +23,6 @@ COPY backend ./backend
 COPY config ./config
 COPY ml_models ./ml_models
 COPY utils ./utils
-COPY data ./data
 
 # Create directories for data and logs
 RUN mkdir -p data logs
