@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API Configuration
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8001")
+API_URL = os.getenv("API_URL", "http://localhost:8001")
 
 
 def _normalize_image_for_backend(
