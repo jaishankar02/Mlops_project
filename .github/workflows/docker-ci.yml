@@ -145,6 +145,12 @@ jobs:
           docker rm -f frontend-ci backend-ci 2>/dev/null || true
           docker network rm test-net 2>/dev/null || true
 
+      - name: Create Safe Docker Tag
+        if: github.event_name == 'push'
+        run: |
+          SAFE_TAG=$(echo "${{ github.ref_name }}" | tr '/' '-')
+          echo "SAFE_BRANCH_TAG=$SAFE_TAG" >> $GITHUB_ENV
+
       - name: Log in to GHCR
         if: github.event_name == 'push'
         uses: docker/login-action@v3
@@ -163,7 +169,7 @@ jobs:
           provenance: false
           sbom: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/mlops-project-backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/mlops-project-backend:branch-${{ env.SAFE_BRANCH_TAG }}
             ghcr.io/${{ github.repository_owner }}/mlops-project-backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -178,7 +184,7 @@ jobs:
           provenance: false
           sbom: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:branch-${{ env.SAFE_BRANCH_TAG }}
             ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
