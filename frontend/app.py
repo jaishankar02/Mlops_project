@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # API Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8001")
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8001")
 
 
 def _normalize_image_for_backend(
@@ -272,6 +272,15 @@ def make_api_call(endpoint: str, method: str = "GET", files=None, params=None, a
         return None
 
 
+def _get_tryon_health() -> dict:
+    try:
+        response = requests.get(f"{API_URL}/api/tryon/health", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return {}
+
+
 def upload_garment_ui():
     """UI for uploading a single garment."""
     st.subheader("📤 Upload Garment")
@@ -470,7 +479,15 @@ def index_stats_ui():
 def tryon_ui():
     """UI for virtual try-on generation using recommender search results."""
     st.subheader("👗 Virtual Try-On (Using Recommended Garments)")
-    st.caption("VITON-only mode is enabled: if VITON output quality is poor, the API returns an error instead of fallback output.")
+    health = _get_tryon_health()
+    hr_available = bool(health.get("hr_viton_available"))
+    hr_strict_official = bool(health.get("hr_viton_strict_official"))
+    hr_path = health.get("hr_viton_path", "backend/hr_viton")
+    if not hr_available:
+        st.warning(f"HR-VITON is not configured in this workspace. Expected path: {hr_path}")
+    elif hr_strict_official:
+        st.info("HR-VITON is using the repo's dataset-style preprocessing pipeline for uploads.")
+    st.caption("Choose automatic selection or explicitly try HR-VITON when the backend has the model installed.")
     
     # Initialize session state for selected garment
     if 'selected_garment' not in st.session_state:
@@ -593,12 +610,24 @@ def tryon_ui():
             
             mode = st.radio(
                 "Try-on mode",
-                ["Quality try-on (recommended)", "Fast fallback try-on"],
+                ["Auto", "HR-VITON", "IDM-VTON"],
                 index=0,
                 horizontal=True,
+                help="Auto uses VRAM-based selection; HR-VITON requests the fallback backend directly.",
             )
+
+            if mode == "HR-VITON" and not hr_available:
+                st.error("HR-VITON cannot run here because the backend repo/checkpoints are missing.")
+
+        preferred_backend = {
+            "Auto": None,
+            "HR-VITON": "hr_viton",
+            "IDM-VTON": "idm_vton",
+        }[mode]
+
+        can_generate = person_file is not None and (mode != "HR-VITON" or hr_available)
         
-        if person_file and st.button("✨ Generate Try-On", key="tryon_btn"):
+        if can_generate and st.button("✨ Generate Try-On", key="tryon_btn"):
             processed_person_bytes = _prepare_person_upload_bytes(person_file.getvalue())
             # Priority: direct uploaded garment > recommender-selected garment.
             if uploaded_garment_file is not None:
@@ -619,7 +648,8 @@ def tryon_ui():
                 ]
 
                 params = {
-                    "use_gan": mode == "Quality try-on (recommended)",
+                    "use_gan": False,
+                    "preferred_backend": preferred_backend,
                 }
 
                 # Use streaming endpoint with progress bar
@@ -671,6 +701,8 @@ def tryon_ui():
                     if result_image_b64:
                         result_bytes = base64.b64decode(result_image_b64)
                         st.markdown("### Result")
+                        if model_used == "HR-VITON":
+                            st.info("HR-VITON was used for this run.")
                         result_col_l, result_col_c, result_col_r = st.columns([1, 2, 1])
                         with result_col_c:
                             st.image(result_bytes, caption="Try-On Result", width=500)
@@ -683,7 +715,6 @@ def tryon_ui():
                             
                 except Exception as e:
                     st.error(f"❌ Try-on generation failed: {str(e)}")
-            
             elif st.session_state.selected_garment_base64:
                 garment_bytes = base64.b64decode(st.session_state.selected_garment_base64)
                 garment_filename = f"{st.session_state.selected_garment}.jpg"
@@ -704,7 +735,8 @@ def tryon_ui():
                 ]
                 
                 params = {
-                    "use_gan": mode == "Quality try-on (recommended)",
+                    "use_gan": False,
+                    "preferred_backend": preferred_backend,
                 }
                 
                 response = make_api_call("/generate", method="POST", files=files, params=params, api_prefix="tryon")
@@ -726,6 +758,10 @@ def tryon_ui():
                         st.info("💡 Fallback mode was used for faster processing.")
             else:
                 st.warning("Please upload a garment image or select one from recommender results.")
+        elif person_file and mode == "HR-VITON" and not hr_available:
+            st.info("Switch to Auto or IDM-VTON until HR-VITON is installed on the backend.")
+        elif person_file and mode == "HR-VITON" and hr_strict_official:
+            st.info("HR-VITON will preprocess your upload using the repo's dataset-style pipeline.")
 
 
 def main():

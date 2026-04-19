@@ -1,4 +1,4 @@
-"""Virtual try-on API routes using IDM-VTON only."""
+"""Virtual try-on API routes with VRAM-aware model selection."""
 from __future__ import annotations
 
 import base64
@@ -19,7 +19,7 @@ from backend.schemas import TryOnResponse
 from config.mlflow_config import log_recommendation_event
 from config.settings import settings
 from config.wandb_config import log_wandb_event
-from ml_models.tryon.idm_vton_wrapper import get_idm_vton_wrapper
+from ml_models.tryon import get_hr_viton_wrapper, get_selected_tryon_wrapper, get_idm_vton_wrapper, select_tryon_backend
 from utils.image_processing import optimize_image, validate_image
 
 router = APIRouter()
@@ -50,11 +50,23 @@ def _is_degenerate_tryon_output(image: Image.Image) -> bool:
     return image.width < 8 or image.height < 8
 
 
-def _get_idm_model():
-    idm_vton = get_idm_vton_wrapper()
-    if not idm_vton.is_available():
-        raise HTTPException(status_code=503, detail="IDM-VTON is not available")
-    return idm_vton
+def _get_tryon_model(preferred_backend: Optional[str] = None):
+    if preferred_backend:
+        selection = select_tryon_backend(preferred_backend)
+        if selection.model_name == "HR-VITON":
+            hr_wrapper = get_hr_viton_wrapper()
+            if not hr_wrapper.is_available():
+                raise HTTPException(status_code=503, detail="HR-VITON is not available")
+            return hr_wrapper, selection
+        idm_wrapper = get_idm_vton_wrapper()
+        if not idm_wrapper.is_available():
+            raise HTTPException(status_code=503, detail="IDM-VTON is not available")
+        return idm_wrapper, selection
+
+    tryon_model, selection = get_selected_tryon_wrapper()
+    if not tryon_model.is_available():
+        raise HTTPException(status_code=503, detail="No try-on backend is available")
+    return tryon_model, selection
 
 
 def _load_maskrcnn_segmenter():
@@ -171,30 +183,40 @@ def _extract_person_on_white(person_image: Image.Image) -> Image.Image:
 async def generate_tryon(
     person_file: UploadFile = File(...),
     garment_file: UploadFile = File(...),
-    use_gan: bool = Query(False, description="Ignored; IDM-VTON is the only supported model"),
+    use_gan: bool = Query(False, description="Ignored; the backend selects the model automatically"),
+    preferred_backend: Optional[str] = Query(None, description="Optional backend override: auto, idm_vton, hr_viton"),
     hf_repo_id: Optional[str] = Query(None, description="Ignored"),
     hf_filename: Optional[str] = Query(None, description="Ignored"),
 ):
-    """Generate a try-on result using the official IDM-VTON demo."""
+    """Generate a try-on result using the selected backend."""
     del use_gan, hf_repo_id, hf_filename
 
     start_time = time.time()
     person_image = await _load_image(person_file)
     person_image = _extract_person_on_white(person_image)
     garment_image = await _load_image(garment_file)
-    idm_vton = _get_idm_model()
+    tryon_model, selection = _get_tryon_model(preferred_backend)
 
     try:
-        result_image = idm_vton.generate_tryon(person_image, garment_image)
+        result_image = tryon_model.generate_tryon(person_image, garment_image)
     except Exception as exc:
-        logger.error("IDM-VTON inference failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"IDM-VTON inference failed: {exc}")
+        logger.error("Try-on inference failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Try-on inference failed: {exc}")
 
     if result_image is None:
-        raise HTTPException(status_code=500, detail="IDM-VTON returned no result")
+        backend_detail = None
+        if hasattr(tryon_model, "get_last_error"):
+            try:
+                backend_detail = tryon_model.get_last_error()
+            except Exception:
+                backend_detail = None
+        detail = "Try-on backend returned no result"
+        if backend_detail:
+            detail = f"{detail}: {backend_detail}"
+        raise HTTPException(status_code=500, detail=detail)
 
     if _is_degenerate_tryon_output(result_image):
-        raise HTTPException(status_code=422, detail="IDM-VTON output failed quality checks")
+        raise HTTPException(status_code=422, detail="Try-on backend output failed quality checks")
 
     result_image = _limit_output_image_size(result_image)
     buffer = BytesIO()
@@ -203,17 +225,19 @@ async def generate_tryon(
     processing_time = (time.time() - start_time) * 1000
 
     log_recommendation_event("tryon_request", {
-        "model_used": "IDM-VTON",
+        "model_used": selection.model_name,
+        "fallback_used": selection.fallback_used,
         "processing_time_ms": processing_time,
     })
     log_wandb_event("tryon_request", {
-        "model_used": "IDM-VTON",
+        "model_used": selection.model_name,
+        "fallback_used": selection.fallback_used,
         "processing_time_ms": processing_time,
     })
 
     return TryOnResponse(
-        model_used="IDM-VTON",
-        fallback_used=False,
+        model_used=selection.model_name,
+        fallback_used=selection.fallback_used,
         processing_time_ms=processing_time,
         result_image_base64=result_b64,
     )
@@ -223,7 +247,8 @@ async def generate_tryon(
 async def generate_tryon_streaming(
     person_file: UploadFile = File(...),
     garment_file: UploadFile = File(...),
-    use_gan: bool = Query(False, description="Ignored; IDM-VTON is the only supported model"),
+    use_gan: bool = Query(False, description="Ignored; the backend selects the model automatically"),
+    preferred_backend: Optional[str] = Query(None, description="Optional backend override: auto, idm_vton, hr_viton"),
     hf_repo_id: Optional[str] = Query(None, description="Ignored"),
     hf_filename: Optional[str] = Query(None, description="Ignored"),
 ):
@@ -239,24 +264,34 @@ async def generate_tryon_streaming(
             person_image = _extract_person_on_white(person_image)
             garment_image = await _load_image(garment_file)
 
-            yield json.dumps({"status": "model_ready", "progress": 15, "message": "Using IDM-VTON official demo..."}) + "\n"
-            yield json.dumps({"status": "inferencing", "progress": 20, "message": "Starting IDM-VTON inference (official Hugging Face pipeline)...", "estimated_seconds": 120}) + "\n"
+            tryon_model, selection = _get_tryon_model(preferred_backend)
 
-            idm_vton = _get_idm_model()
+            yield json.dumps({"status": "model_ready", "progress": 15, "message": f"Using {selection.model_name}..."}) + "\n"
+            yield json.dumps({"status": "inferencing", "progress": 20, "message": f"Starting {selection.model_name} inference...", "estimated_seconds": 120}) + "\n"
+
             try:
-                result_image = idm_vton.generate_tryon(person_image, garment_image)
+                result_image = tryon_model.generate_tryon(person_image, garment_image)
             except Exception as exc:
                 yield json.dumps({"status": "error", "progress": 0, "message": f"Inference failed: {exc}"}) + "\n"
                 return
 
             if result_image is None:
-                yield json.dumps({"status": "error", "progress": 0, "message": "IDM-VTON returned no result"}) + "\n"
+                backend_detail = None
+                if hasattr(tryon_model, "get_last_error"):
+                    try:
+                        backend_detail = tryon_model.get_last_error()
+                    except Exception:
+                        backend_detail = None
+                message = "Try-on backend returned no result"
+                if backend_detail:
+                    message = f"{message}: {backend_detail}"
+                yield json.dumps({"status": "error", "progress": 0, "message": message}) + "\n"
                 return
 
             yield json.dumps({"status": "quality_check", "progress": 85, "message": "Checking output quality...", "elapsed_seconds": round(time.time() - start_time, 1)}) + "\n"
 
             if _is_degenerate_tryon_output(result_image):
-                yield json.dumps({"status": "error", "progress": 0, "message": "IDM-VTON output failed quality checks"}) + "\n"
+                yield json.dumps({"status": "error", "progress": 0, "message": "Try-on backend output failed quality checks"}) + "\n"
                 return
 
             yield json.dumps({"status": "finalizing", "progress": 95, "message": "Finalizing output..."}) + "\n"
@@ -268,11 +303,13 @@ async def generate_tryon_streaming(
             processing_time = (time.time() - start_time) * 1000
 
             log_recommendation_event("tryon_request", {
-                "model_used": "IDM-VTON",
+                "model_used": selection.model_name,
+                "fallback_used": selection.fallback_used,
                 "processing_time_ms": processing_time,
             })
             log_wandb_event("tryon_request", {
-                "model_used": "IDM-VTON",
+                "model_used": selection.model_name,
+                "fallback_used": selection.fallback_used,
                 "processing_time_ms": processing_time,
             })
 
@@ -280,7 +317,8 @@ async def generate_tryon_streaming(
                 "status": "success",
                 "progress": 100,
                 "message": "Complete!",
-                "model_used": "IDM-VTON",
+                "model_used": selection.model_name,
+                "fallback_used": selection.fallback_used,
                 "processing_time_ms": round(processing_time, 1),
                 "result_image_base64": result_b64,
             }) + "\n"
@@ -296,12 +334,20 @@ async def generate_tryon_streaming(
 
 @router.get("/health")
 async def tryon_health():
-    """Report IDM-VTON availability status."""
+    """Report try-on availability status."""
     idm_wrapper = get_idm_vton_wrapper()
+    hr_wrapper = get_hr_viton_wrapper()
+    selection = select_tryon_backend()
     return {
         "status": "healthy",
         "idm_vton_enabled": settings.IDM_VTON_ENABLED,
         "idm_vton_available": idm_wrapper.is_available(),
+        "hr_viton_enabled": settings.HR_VITON_ENABLED,
+        "hr_viton_available": hr_wrapper.is_available(),
+        "hr_viton_strict_official": settings.HR_VITON_STRICT_OFFICIAL,
+        "hr_viton_path": str(hr_wrapper.repo_path),
+        "selected_tryon_model": selection.model_name,
+        "selected_tryon_fallback_used": selection.fallback_used,
         "idm_vton_model_id": getattr(idm_wrapper, "model_id", settings.IDM_VTON_PRETRAINED_MODEL_NAME_OR_PATH),
         "idm_vton_space_id": getattr(idm_wrapper, "space_id", "yisol/IDM-VTON"),
         "idm_vton_snapshot_path": str(getattr(idm_wrapper, "_snapshot_path", None)) if getattr(idm_wrapper, "_snapshot_path", None) else None,
