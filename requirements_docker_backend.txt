@@ -1,0 +1,53 @@
+# Backend runtime dependencies for Docker/CI builds.
+# Keep this file focused on packages required to start backend and serve API routes.
+
+# Core API
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+
+# Core ML / vision
+numpy==1.24.3
+pillow==10.1.0
+opencv-python==4.8.1.78
+scikit-learn==1.3.2
+scipy==1.11.4
+
+# PyTorch + recommender
+torch==2.1.2
+torchvision==0.16.2
+faiss-cpu==1.7.4
+transformers==4.35.2
+tqdm==4.66.1
+clip @ git+https://github.com/openai/CLIP.git
+ftfy==6.2.3
+regex==2024.5.15
+
+# Try-on runtime (IDM-VTON path)
+diffusers==0.27.2
+accelerate==0.29.3
+safetensors==0.4.3
+einops==0.7.0
+huggingface-hub==0.26.2
+timm==0.9.8
+gradio==4.44.1
+gradio_client==1.3.0
+fvcore==0.1.5.post20221221
+pycocotools==2.0.7
+
+# Tracking and storage
+mlflow==2.10.0
+wandb==0.16.1
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.23
+
+# Utilities
+requests==2.31.0
+python-dotenv==1.0.0
+PyYAML==6.0.1
+pandas==2.1.3
+
+# Compatibility pin for wandb/pkg_resources imports
+setuptools<81
