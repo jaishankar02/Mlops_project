@@ -5,24 +5,29 @@ services:
   backend:
     build: .
     container_name: stylesync-backend
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
     ports:
-      - "8000:8000"
+      - "8001:8001"
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8001
       - DEBUG=False
-      - DATABASE_URL=postgresql://stylesync:stylesync123@db:5432/stylesync
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - MLFLOW_BACKEND_STORE_URI=postgresql://stylesync:stylesync123@db:5432/mlflow
-      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+      - PYTHONPATH=/app
+      - MLFLOW_TRACKING_URI=file:/app/mlruns
+      - MLFLOW_BACKEND_STORE_URI=file:/app/mlruns
+      - MLFLOW_ARTIFACT_ROOT=/app/mlruns
+      - WANDB_MODE=disabled
       - LOG_LEVEL=INFO
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./mlruns:/app/mlruns
-    depends_on:
-      - db
-      - mlflow
+      - backend_data:/app/data
+      - backend_logs:/app/logs
+      - backend_mlruns:/app/mlruns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - stylesync-network
     restart: unless-stopped
@@ -36,65 +41,21 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - API_URL=http://backend:8000
+      - API_URL=http://backend:8001
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-    volumes:
-      - ./frontend:/app/frontend
-      - ./data:/app/data
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - stylesync-network
     restart: unless-stopped
-
-  # PostgreSQL Database
-  db:
-    image: postgres:15-alpine
-    container_name: stylesync-db
-    environment:
-      - POSTGRES_USER=stylesync
-      - POSTGRES_PASSWORD=stylesync123
-      - POSTGRES_DB=stylesync
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - stylesync-network
-    restart: unless-stopped
-
-  # MLflow Tracking Server
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: stylesync-mlflow
-    command: mlflow server --backend-store-uri postgresql://stylesync:stylesync123@db:5432/mlflow --default-artifact-root /mlflow/artifacts --host 0.0.0.0
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./mlruns:/mlflow/artifacts
-    depends_on:
-      - db
-    networks:
-      - stylesync-network
-    restart: unless-stopped
-
-  # Redis Cache (optional, for future phases)
-  redis:
-    image: redis:7-alpine
-    container_name: stylesync-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - stylesync-network
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-  redis_data:
 
 networks:
   stylesync-network:
     driver: bridge
+
+volumes:
+  backend_data:
+  backend_logs:
+  backend_mlruns:

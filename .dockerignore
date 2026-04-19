@@ -1,0 +1,32 @@
+# VCS and editor
+.git
+.gitignore
+
+# Python cache / local env
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Local runtime artifacts
+wandb/
+mlflow.db
+outputs/
+artifacts/
+journey/
+logs/
+
+# Large optional local bundles not needed in docker images
+checkpoints-20260417T082209Z-3-001/
+models/
+
+# Development and docs (not needed at runtime)
+tests/
+*.md
+quick_start.sh
+setup.py
+download_models.py
+examples.py
+train_models.py
