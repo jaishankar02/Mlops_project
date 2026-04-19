@@ -160,7 +160,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push backend image to GHCR
-        if: github.event_name == 'push'
+        if: false # Skipping backend build to save time
         uses: docker/build-push-action@v6
         with:
           context: .
