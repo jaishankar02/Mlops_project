@@ -108,3 +108,11 @@ mlflow.db
 Thumbs.db
 
 # Keep GitHub workflow files tracked; do not ignore .github/
+
+# Ignore local datasets entirely, but explicitly keep DVC tracking files
+datasets/*
+!datasets/*.dvc
+!datasets/.gitignore
+
+# Ignore locally generated JSON reports/logs
+generated-mote-*.json
