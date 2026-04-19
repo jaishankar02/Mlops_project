@@ -57,7 +57,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install dvc dvc-s3
 
+      - name: Cache Dataset via DVC
+        id: dvc-cache
+        uses: actions/cache@v3
+        with:
+          path: datasets/high_resolution_viton_zalando
+          key: ${{ runner.os }}-dvc-dataset-${{ hashFiles('datasets/high_resolution_viton_zalando.dvc') }}
+          restore-keys: |
+            ${{ runner.os }}-dvc-dataset-
+
       - name: Pull Dataset via DVC (DagsHub S3)
+        if: steps.dvc-cache.outputs.cache-hit != 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_TOKEN }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
