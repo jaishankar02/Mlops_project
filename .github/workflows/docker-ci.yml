@@ -109,7 +109,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/delete-package-versions@v5
         with:
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           package-name: mlops-project-frontend
           package-type: container
           min-versions-to-keep: 2
