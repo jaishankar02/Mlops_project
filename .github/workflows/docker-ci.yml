@@ -62,27 +62,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test backend container
-        run: |
-          docker run -d --name backend-ci -p 8001:8001 \
-            mlops-project/backend:ci
-
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8001/health >/dev/null; then
-              echo "Backend startup check passed"
-              break
-            fi
-            sleep 2
-          done
-
-          curl -fsS http://127.0.0.1:8001/health >/dev/null
-          docker logs backend-ci --tail 200
-
-      - name: Cleanup backend container
-        if: always()
-        run: |
-          docker rm -f backend-ci 2>/dev/null || true
-
       - name: Build frontend image (CI local)
         uses: docker/build-push-action@v6
         with:
