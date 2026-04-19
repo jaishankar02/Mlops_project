@@ -148,3 +148,21 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Keep last 2 backend images in GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mlops-project-backend
+          package-type: container
+          min-versions-to-keep: 2
+          delete-only-untagged-versions: false
+
+      - name: Keep last 2 frontend images in GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mlops-project-frontend
+          package-type: container
+          min-versions-to-keep: 2
+          delete-only-untagged-versions: false

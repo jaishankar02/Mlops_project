@@ -9,6 +9,8 @@ import time
 from io import BytesIO
 from typing import Optional
 
+import numpy as np
+import torch
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from PIL import Image
@@ -55,6 +57,116 @@ def _get_idm_model():
     return idm_vton
 
 
+def _load_maskrcnn_segmenter():
+    from torchvision.models.detection import (
+        MaskRCNN_ResNet50_FPN_Weights,
+        maskrcnn_resnet50_fpn,
+    )
+
+    weights = MaskRCNN_ResNet50_FPN_Weights.DEFAULT
+    model = maskrcnn_resnet50_fpn(weights=weights)
+    model.eval()
+    preprocess = weights.transforms()
+    return model, preprocess
+
+
+def _load_deeplab_segmenter():
+    from torchvision.models.segmentation import (
+        DeepLabV3_ResNet50_Weights,
+        deeplabv3_resnet50,
+    )
+
+    weights = DeepLabV3_ResNet50_Weights.DEFAULT
+    model = deeplabv3_resnet50(weights=weights)
+    model.eval()
+    preprocess = weights.transforms()
+    return model, preprocess
+
+
+def _get_segmenters():
+    # Cache models in-process so repeated requests avoid re-loading weights.
+    if not hasattr(_get_segmenters, "cache"):
+        _get_segmenters.cache = {
+            "maskrcnn": _load_maskrcnn_segmenter(),
+            "deeplab": _load_deeplab_segmenter(),
+        }
+    return _get_segmenters.cache
+
+
+def _segment_person_mask(img: np.ndarray) -> np.ndarray:
+    pil_img = Image.fromarray(img).convert("RGB")
+    segmenters = _get_segmenters()
+
+    try:
+        mrcnn, mrcnn_preprocess = segmenters["maskrcnn"]
+        inp = mrcnn_preprocess(pil_img).unsqueeze(0)
+        with torch.no_grad():
+            pred = mrcnn(inp)[0]
+
+        labels = pred.get("labels")
+        scores = pred.get("scores")
+        masks = pred.get("masks")
+        if labels is not None and scores is not None and masks is not None:
+            keep = (labels == 1) & (scores > 0.55)
+            if keep.any():
+                person_masks = masks[keep, 0] > 0.5
+                combined = person_masks.any(dim=0).cpu().numpy().astype(np.uint8)
+                if combined.mean() > 0.02:
+                    return combined
+    except Exception as exc:
+        logger.debug("Mask R-CNN segmentation fallback triggered: %s", exc)
+
+    deeplab, dl_preprocess = segmenters["deeplab"]
+    inp = dl_preprocess(pil_img).unsqueeze(0)
+    with torch.no_grad():
+        out = deeplab(inp)["out"][0]
+    probs = torch.softmax(out, dim=0)
+    person_prob = probs[15].cpu().numpy()
+    return (person_prob > 0.5).astype(np.uint8)
+
+
+def _extract_person_on_white(person_image: Image.Image) -> Image.Image:
+    try:
+        img = np.array(person_image.convert("RGB"))
+        h, w = img.shape[:2]
+        if h < 32 or w < 32:
+            return person_image
+
+        fg_mask = _segment_person_mask(img)
+        mask_ratio = float(fg_mask.mean())
+        if mask_ratio < 0.03 or mask_ratio > 0.85:
+            return person_image
+
+        ys, xs = np.where(fg_mask > 0)
+        if len(xs) == 0 or len(ys) == 0:
+            return person_image
+
+        x1, x2 = xs.min(), xs.max()
+        y1, y2 = ys.min(), ys.max()
+
+        box_w = x2 - x1 + 1
+        box_h = y2 - y1 + 1
+        if box_w < int(0.12 * w) or box_h < int(0.18 * h):
+            return person_image
+
+        pad_x = max(20, int(box_w * 0.22))
+        pad_y = max(24, int(box_h * 0.22))
+        x1 = max(0, x1 - pad_x)
+        y1 = max(0, y1 - pad_y)
+        x2 = min(w - 1, x2 + pad_x)
+        y2 = min(h - 1, y2 + pad_y)
+
+        crop_img = img[y1:y2 + 1, x1:x2 + 1]
+        crop_mask = fg_mask[y1:y2 + 1, x1:x2 + 1]
+
+        white_bg = np.full_like(crop_img, 255)
+        result = np.where(crop_mask[:, :, None] > 0, crop_img, white_bg)
+        return Image.fromarray(result)
+    except Exception as exc:
+        logger.debug("Person preprocessing fallback to original image: %s", exc)
+        return person_image
+
+
 @router.post("/generate", response_model=TryOnResponse)
 async def generate_tryon(
     person_file: UploadFile = File(...),
@@ -68,6 +180,7 @@ async def generate_tryon(
 
     start_time = time.time()
     person_image = await _load_image(person_file)
+    person_image = _extract_person_on_white(person_image)
     garment_image = await _load_image(garment_file)
     idm_vton = _get_idm_model()
 
@@ -123,6 +236,7 @@ async def generate_tryon_streaming(
             yield json.dumps({"status": "loading_images", "progress": 5, "message": "Loading person and garment images..."}) + "\n"
 
             person_image = await _load_image(person_file)
+            person_image = _extract_person_on_white(person_image)
             garment_image = await _load_image(garment_file)
 
             yield json.dumps({"status": "model_ready", "progress": 15, "message": "Using IDM-VTON official demo..."}) + "\n"

@@ -12,8 +12,6 @@ import os
 import base64
 import time
 import json
-import numpy as np
-import torch
 
 # Configure page
 st.set_page_config(
@@ -58,127 +56,6 @@ logger = logging.getLogger(__name__)
 
 # API Configuration
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8001")
-
-
-@st.cache_resource
-def _load_deeplab_segmenter():
-    """Load pretrained DeepLabV3 segmentation model once per Streamlit process."""
-    from torchvision.models.segmentation import (
-        deeplabv3_resnet50,
-        DeepLabV3_ResNet50_Weights,
-    )
-
-    weights = DeepLabV3_ResNet50_Weights.DEFAULT
-    model = deeplabv3_resnet50(weights=weights)
-    model.eval()
-    preprocess = weights.transforms()
-    return model, preprocess
-
-
-@st.cache_resource
-def _load_maskrcnn_segmenter():
-    """Load pretrained Mask R-CNN instance segmentation model once per process."""
-    from torchvision.models.detection import (
-        maskrcnn_resnet50_fpn,
-        MaskRCNN_ResNet50_FPN_Weights,
-    )
-
-    weights = MaskRCNN_ResNet50_FPN_Weights.DEFAULT
-    model = maskrcnn_resnet50_fpn(weights=weights)
-    model.eval()
-    preprocess = weights.transforms()
-    return model, preprocess
-
-
-def _segment_person_mask(img: np.ndarray) -> np.ndarray:
-    """Get person mask using pretrained models only.
-
-    Priority:
-    1) Mask R-CNN (instance segmentation, COCO person class)
-    2) DeepLabV3 person class fallback
-    """
-    pil_img = Image.fromarray(img).convert("RGB")
-
-    # Primary: Mask R-CNN (person label in COCO is 1).
-    try:
-        mrcnn, mrcnn_preprocess = _load_maskrcnn_segmenter()
-        inp = mrcnn_preprocess(pil_img).unsqueeze(0)
-        with torch.no_grad():
-            pred = mrcnn(inp)[0]
-
-        labels = pred.get("labels")
-        scores = pred.get("scores")
-        masks = pred.get("masks")
-        if labels is not None and scores is not None and masks is not None:
-            keep = (labels == 1) & (scores > 0.55)
-            if keep.any():
-                person_masks = masks[keep, 0] > 0.5
-                combined = person_masks.any(dim=0).cpu().numpy().astype(np.uint8)
-                if combined.mean() > 0.02:
-                    return combined
-    except Exception:
-        pass
-
-    # Fallback: DeepLabV3 (VOC person class index 15).
-    deeplab, dl_preprocess = _load_deeplab_segmenter()
-    inp = dl_preprocess(pil_img).unsqueeze(0)
-    with torch.no_grad():
-        out = deeplab(inp)["out"][0]
-    probs = torch.softmax(out, dim=0)
-    person_prob = probs[15].cpu().numpy()
-    return (person_prob > 0.5).astype(np.uint8)
-
-
-def _extract_person_on_white(person_bytes: bytes) -> bytes:
-    """Crop around segmented person and place foreground on white background.
-
-    Uses pretrained segmentation models only (Mask R-CNN + DeepLab fallback).
-    """
-    try:
-        pil_img = Image.open(io.BytesIO(person_bytes)).convert("RGB")
-        img = np.array(pil_img)
-        h, w = img.shape[:2]
-        if h < 32 or w < 32:
-            return person_bytes
-
-        fg_mask = _segment_person_mask(img)
-
-        # Conservative sanity checks to avoid destructive crops.
-        mask_ratio = float(fg_mask.mean())
-        if mask_ratio < 0.03 or mask_ratio > 0.85:
-            return person_bytes
-
-        ys, xs = np.where(fg_mask > 0)
-        if len(xs) == 0 or len(ys) == 0:
-            return person_bytes
-
-        x1, x2 = xs.min(), xs.max()
-        y1, y2 = ys.min(), ys.max()
-
-        box_w = x2 - x1 + 1
-        box_h = y2 - y1 + 1
-        if box_w < int(0.12 * w) or box_h < int(0.18 * h):
-            return person_bytes
-
-        # Generous margin to avoid clipping hands/feet/hair.
-        pad_x = max(20, int(box_w * 0.22))
-        pad_y = max(24, int(box_h * 0.22))
-        x1 = max(0, x1 - pad_x)
-        y1 = max(0, y1 - pad_y)
-        x2 = min(w - 1, x2 + pad_x)
-        y2 = min(h - 1, y2 + pad_y)
-
-        crop_img = img[y1:y2 + 1, x1:x2 + 1]
-        crop_mask = fg_mask[y1:y2 + 1, x1:x2 + 1]
-
-        white_bg = np.full_like(crop_img, 255)
-        result = np.where(crop_mask[:, :, None] > 0, crop_img, white_bg)
-
-        out = io.BytesIO()
-        Image.fromarray(result).save(out, format="PNG")
-        return out.getvalue()
-    except Exception:
-        return person_bytes
 
 
 def _normalize_image_for_backend(
@@ -260,10 +137,9 @@ def _is_backend_bytes_valid(image_bytes: bytes) -> bool:
 
 
 def _prepare_person_upload_bytes(person_bytes: bytes) -> bytes:
-    """Prepare person image bytes robustly for backend request validation."""
-    processed = _extract_person_on_white(person_bytes)
+    """Prepare person image bytes for backend-side preprocessing and validation."""
     try:
-        img = Image.open(io.BytesIO(processed)).convert("RGB")
+        img = Image.open(io.BytesIO(person_bytes)).convert("RGB")
     except Exception:
         img = Image.open(io.BytesIO(person_bytes)).convert("RGB")
     out = io.BytesIO()
@@ -710,8 +586,8 @@ def tryon_ui():
             if person_file is not None:
                 st.markdown("**Person Preview:**")
                 try:
-                    person_preview_bytes = _extract_person_on_white(person_file.getvalue())
-                    st.image(person_preview_bytes, caption=f"{person_file.name} (cropped, white background)", width=220)
+                    person_preview_bytes = _prepare_person_upload_bytes(person_file.getvalue())
+                    st.image(person_preview_bytes, caption=f"{person_file.name} (upload preview)", width=220)
                 except Exception:
                     st.caption("Unable to preview uploaded person image")
             

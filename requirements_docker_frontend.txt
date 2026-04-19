@@ -1,0 +1,6 @@
+# Frontend runtime dependencies for Docker/CI builds.
+# Keep this file minimal: only packages needed by frontend/app.py.
+
+streamlit==1.28.1
+requests==2.31.0
+pillow==10.1.0
