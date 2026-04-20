@@ -73,9 +73,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Create CI env file
+        run: |
+          cat > .env.ci <<'EOF'
+          BACKEND_SERVICE_KEY=${{ vars.BACKEND_SERVICE_KEY || 'stylesync-local-backend' }}
+          EXPECTED_BACKEND_SERVICE_KEY=${{ vars.BACKEND_SERVICE_KEY || 'stylesync-local-backend' }}
+          BACKEND_DISCOVERY_PORTS=${{ vars.BACKEND_DISCOVERY_PORTS || '8001-8010,8501-8510' }}
+          BACKEND_HOST=backend
+          BACKEND_PORT=8001
+          API_URL=http://backend:8001
+          EOF
+
       - name: Smoke test frontend container
         run: |
           docker run -d --name frontend-ci -p 8501:8501 \
+            --env-file .env.ci \
             mlops-project/frontend:ci
 
           for i in {1..30}; do
@@ -93,6 +105,7 @@ jobs:
         if: always()
         run: |
           docker rm -f frontend-ci 2>/dev/null || true
+          rm -f .env.ci
 
       - name: Log in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

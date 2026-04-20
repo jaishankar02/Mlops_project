@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    BACKEND_SERVICE_KEY: str = os.getenv("BACKEND_SERVICE_KEY", "stylesync-local-backend")
     
     # CORS Settings
     CORS_ORIGINS: List[str] = [

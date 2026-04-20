@@ -80,7 +80,11 @@ async def read_root():
 @app.get("/health")
 async def health_check():
     """Health check for deployment monitoring."""
-    return {"status": "healthy", "service": "stylesync-recommender"}
+    return {
+        "status": "healthy",
+        "service": "stylesync-recommender",
+        "service_key": settings.BACKEND_SERVICE_KEY,
+    }
 
 
 @app.get("/metrics")

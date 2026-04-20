@@ -340,6 +340,7 @@ async def tryon_health():
     selection = select_tryon_backend()
     return {
         "status": "healthy",
+        "service_key": settings.BACKEND_SERVICE_KEY,
         "idm_vton_enabled": settings.IDM_VTON_ENABLED,
         "idm_vton_available": idm_wrapper.is_available(),
         "hr_viton_enabled": settings.HR_VITON_ENABLED,
