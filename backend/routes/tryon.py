@@ -19,7 +19,7 @@ from backend.schemas import TryOnResponse
 from config.mlflow_config import log_recommendation_event
 from config.settings import settings
 from config.wandb_config import log_wandb_event
-from ml_models.tryon import get_hr_viton_wrapper, get_selected_tryon_wrapper, get_idm_vton_wrapper, select_tryon_backend
+from ml_models.tryon import get_selected_tryon_wrapper, get_idm_vton_wrapper, select_tryon_backend
 from utils.image_processing import optimize_image, validate_image
 
 router = APIRouter()
@@ -52,12 +52,10 @@ def _is_degenerate_tryon_output(image: Image.Image) -> bool:
 
 def _get_tryon_model(preferred_backend: Optional[str] = None):
     if preferred_backend:
-        selection = select_tryon_backend(preferred_backend)
-        if selection.model_name == "HR-VITON":
-            hr_wrapper = get_hr_viton_wrapper()
-            if not hr_wrapper.is_available():
-                raise HTTPException(status_code=503, detail="HR-VITON is not available")
-            return hr_wrapper, selection
+        preferred = preferred_backend.strip().lower()
+        if preferred == "hr_viton":
+            raise HTTPException(status_code=400, detail="HR-VITON is disabled. Use IDM-VTON.")
+        selection = select_tryon_backend("idm_vton")
         idm_wrapper = get_idm_vton_wrapper()
         if not idm_wrapper.is_available():
             raise HTTPException(status_code=503, detail="IDM-VTON is not available")
@@ -336,17 +334,16 @@ async def generate_tryon_streaming(
 async def tryon_health():
     """Report try-on availability status."""
     idm_wrapper = get_idm_vton_wrapper()
-    hr_wrapper = get_hr_viton_wrapper()
-    selection = select_tryon_backend()
+    selection = select_tryon_backend("idm_vton")
     return {
         "status": "healthy",
         "service_key": settings.BACKEND_SERVICE_KEY,
         "idm_vton_enabled": settings.IDM_VTON_ENABLED,
         "idm_vton_available": idm_wrapper.is_available(),
-        "hr_viton_enabled": settings.HR_VITON_ENABLED,
-        "hr_viton_available": hr_wrapper.is_available(),
-        "hr_viton_strict_official": settings.HR_VITON_STRICT_OFFICIAL,
-        "hr_viton_path": str(hr_wrapper.repo_path),
+        "hr_viton_enabled": False,
+        "hr_viton_available": False,
+        "hr_viton_strict_official": False,
+        "hr_viton_path": None,
         "selected_tryon_model": selection.model_name,
         "selected_tryon_fallback_used": selection.fallback_used,
         "idm_vton_model_id": getattr(idm_wrapper, "model_id", settings.IDM_VTON_PRETRAINED_MODEL_NAME_OR_PATH),
