@@ -54,8 +54,117 @@ st.markdown("""
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# API Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8001")
+def _normalize_api_url(value: str) -> str:
+    return value.rstrip("/")
+
+
+def _normalize_service_key(value: str) -> str:
+    return value.strip()
+
+
+def _expected_backend_service_key() -> str:
+    return _normalize_service_key(
+        os.getenv("BACKEND_SERVICE_KEY", os.getenv("EXPECTED_BACKEND_SERVICE_KEY", ""))
+    )
+
+
+def _candidate_api_urls() -> list[str]:
+    candidates: list[str] = []
+
+    for env_name in ("API_URL", "BACKEND_URL"):
+        value = os.getenv(env_name)
+        if value:
+            candidates.append(_normalize_api_url(value))
+
+    backend_host = os.getenv("BACKEND_HOST")
+    backend_port = os.getenv("BACKEND_PORT")
+    if backend_host and backend_port:
+        candidates.append(_normalize_api_url(f"http://{backend_host}:{backend_port}"))
+
+    if os.path.exists("/.dockerenv"):
+        candidates.append("http://backend:8001")
+
+    discovery_ports = os.getenv("BACKEND_DISCOVERY_PORTS", "")
+    candidate_ports: list[int] = []
+    if discovery_ports:
+        for token in discovery_ports.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if "-" in token:
+                start_text, end_text = token.split("-", 1)
+                try:
+                    start_port = int(start_text)
+                    end_port = int(end_text)
+                except ValueError:
+                    continue
+                if start_port > end_port:
+                    start_port, end_port = end_port, start_port
+                candidate_ports.extend(range(start_port, end_port + 1))
+            else:
+                try:
+                    candidate_ports.append(int(token))
+                except ValueError:
+                    continue
+    else:
+        candidate_ports.extend([8001, 8002, 8003, 8501, 8502])
+
+    for port in candidate_ports:
+        candidate = _normalize_api_url(f"http://127.0.0.1:{port}")
+        candidates.append(candidate)
+
+    seen = set()
+    ordered: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return ordered
+
+
+def _probe_api_url(base_url: str) -> bool:
+    try:
+        response = requests.get(f"{base_url}/health", timeout=2)
+        if not response.ok:
+            return False
+
+        expected_key = _expected_backend_service_key()
+        if not expected_key:
+            return True
+
+        payload = response.json()
+        return payload.get("service_key") == expected_key
+    except Exception:
+        return False
+
+
+def _resolve_api_url() -> str:
+    candidates = _candidate_api_urls()
+    for candidate in candidates:
+        if _probe_api_url(candidate):
+            return candidate
+    return candidates[0] if candidates else "http://127.0.0.1:8001"
+
+
+if "api_url" not in st.session_state:
+    st.session_state.api_url = _resolve_api_url()
+
+with st.sidebar:
+    st.markdown("### Backend Connection")
+    st.caption("The frontend uses this URL for all API calls.")
+    st.session_state.api_url = st.text_input(
+        "Backend API URL",
+        value=st.session_state.api_url,
+        help="Change this if the backend is running on a different host or port.",
+    ).strip() or st.session_state.api_url
+
+    backend_key = _expected_backend_service_key()
+    if backend_key:
+        st.caption(f"Service key: `{backend_key}`")
+
+
+def get_api_url() -> str:
+    return _normalize_api_url(st.session_state.get("api_url", "http://127.0.0.1:8001"))
 
 
 def _normalize_image_for_backend(
@@ -237,7 +346,7 @@ def _compress_garment_for_upload(
 def make_api_call(endpoint: str, method: str = "GET", files=None, params=None, api_prefix: str = "recommender"):
     """Make API call with error handling."""
     try:
-        url = f"{API_URL}/api/{api_prefix}{endpoint}"
+        url = f"{get_api_url()}/api/{api_prefix}{endpoint}"
         
         if method == "GET":
             response = requests.get(url, params=params, timeout=30)
@@ -270,6 +379,15 @@ def make_api_call(endpoint: str, method: str = "GET", files=None, params=None, a
         else:
             st.error(f"❌ API Error: {str(e)}")
         return None
+
+
+def _get_tryon_health() -> dict:
+    try:
+        response = requests.get(f"{get_api_url()}/api/tryon/health", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return {}
 
 
 def upload_garment_ui():
@@ -470,7 +588,15 @@ def index_stats_ui():
 def tryon_ui():
     """UI for virtual try-on generation using recommender search results."""
     st.subheader("👗 Virtual Try-On (Using Recommended Garments)")
-    st.caption("VITON-only mode is enabled: if VITON output quality is poor, the API returns an error instead of fallback output.")
+    health = _get_tryon_health()
+    hr_available = bool(health.get("hr_viton_available"))
+    hr_strict_official = bool(health.get("hr_viton_strict_official"))
+    hr_path = health.get("hr_viton_path", "backend/hr_viton")
+    if not hr_available:
+        st.warning(f"HR-VITON is not configured in this workspace. Expected path: {hr_path}")
+    elif hr_strict_official:
+        st.info("HR-VITON is using the repo's dataset-style preprocessing pipeline for uploads.")
+    st.caption("Choose automatic selection or explicitly try HR-VITON when the backend has the model installed.")
     
     # Initialize session state for selected garment
     if 'selected_garment' not in st.session_state:
@@ -593,12 +719,24 @@ def tryon_ui():
             
             mode = st.radio(
                 "Try-on mode",
-                ["Quality try-on (recommended)", "Fast fallback try-on"],
+                ["Auto", "HR-VITON", "IDM-VTON"],
                 index=0,
                 horizontal=True,
+                help="Auto uses VRAM-based selection; HR-VITON requests the fallback backend directly.",
             )
+
+            if mode == "HR-VITON" and not hr_available:
+                st.error("HR-VITON cannot run here because the backend repo/checkpoints are missing.")
+
+        preferred_backend = {
+            "Auto": None,
+            "HR-VITON": "hr_viton",
+            "IDM-VTON": "idm_vton",
+        }[mode]
+
+        can_generate = person_file is not None and (mode != "HR-VITON" or hr_available)
         
-        if person_file and st.button("✨ Generate Try-On", key="tryon_btn"):
+        if can_generate and st.button("✨ Generate Try-On", key="tryon_btn"):
             processed_person_bytes = _prepare_person_upload_bytes(person_file.getvalue())
             # Priority: direct uploaded garment > recommender-selected garment.
             if uploaded_garment_file is not None:
@@ -619,12 +757,13 @@ def tryon_ui():
                 ]
 
                 params = {
-                    "use_gan": mode == "Quality try-on (recommended)",
+                    "use_gan": False,
+                    "preferred_backend": preferred_backend,
                 }
 
                 # Use streaming endpoint with progress bar
                 try:
-                    url = f"{API_URL}/api/tryon/generate-streaming"
+                    url = f"{get_api_url()}/api/tryon/generate-streaming"
                     
                     # Create progress container
                     progress_container = st.container()
@@ -671,6 +810,8 @@ def tryon_ui():
                     if result_image_b64:
                         result_bytes = base64.b64decode(result_image_b64)
                         st.markdown("### Result")
+                        if model_used == "HR-VITON":
+                            st.info("HR-VITON was used for this run.")
                         result_col_l, result_col_c, result_col_r = st.columns([1, 2, 1])
                         with result_col_c:
                             st.image(result_bytes, caption="Try-On Result", width=500)
@@ -683,7 +824,6 @@ def tryon_ui():
                             
                 except Exception as e:
                     st.error(f"❌ Try-on generation failed: {str(e)}")
-            
             elif st.session_state.selected_garment_base64:
                 garment_bytes = base64.b64decode(st.session_state.selected_garment_base64)
                 garment_filename = f"{st.session_state.selected_garment}.jpg"
@@ -704,7 +844,8 @@ def tryon_ui():
                 ]
                 
                 params = {
-                    "use_gan": mode == "Quality try-on (recommended)",
+                    "use_gan": False,
+                    "preferred_backend": preferred_backend,
                 }
                 
                 response = make_api_call("/generate", method="POST", files=files, params=params, api_prefix="tryon")
@@ -726,6 +867,10 @@ def tryon_ui():
                         st.info("💡 Fallback mode was used for faster processing.")
             else:
                 st.warning("Please upload a garment image or select one from recommender results.")
+        elif person_file and mode == "HR-VITON" and not hr_available:
+            st.info("Switch to Auto or IDM-VTON until HR-VITON is installed on the backend.")
+        elif person_file and mode == "HR-VITON" and hr_strict_official:
+            st.info("HR-VITON will preprocess your upload using the repo's dataset-style pipeline.")
 
 
 def main():
@@ -755,7 +900,7 @@ def main():
         
         st.markdown("**API Status**")
         try:
-            response = requests.get(f"{API_URL}/health", timeout=5)
+            response = requests.get(f"{get_api_url()}/health", timeout=5)
             if response.status_code == 200:
                 st.success("✅ API Server Online")
             else:

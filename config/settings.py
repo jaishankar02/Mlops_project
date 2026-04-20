@@ -2,16 +2,19 @@
 Application settings and configuration.
 """
 from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 from typing import List
 import os
 
 class Settings(BaseSettings):
     """Application settings."""
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
     
     # API Settings
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    BACKEND_SERVICE_KEY: str = os.getenv("BACKEND_SERVICE_KEY", "stylesync-local-backend")
     
     # CORS Settings
     CORS_ORIGINS: List[str] = [
@@ -72,6 +75,16 @@ class Settings(BaseSettings):
     WANDB_MODE: str = os.getenv("WANDB_MODE", "disabled")
     WANDB_API_KEY: str = os.getenv("WANDB_API_KEY", "")
 
+    # HR-VITON fallback settings
+    HR_VITON_ENABLED: bool = os.getenv("HR_VITON_ENABLED", "True").lower() == "true"
+    HR_VITON_LOCAL_REPO_PATH: str = os.getenv("HR_VITON_LOCAL_REPO_PATH", "backend/hr_viton")
+    HR_VITON_TOCG_CHECKPOINT: str = os.getenv("HR_VITON_TOCG_CHECKPOINT", "")
+    HR_VITON_GEN_CHECKPOINT: str = os.getenv("HR_VITON_GEN_CHECKPOINT", "")
+    HR_VITON_TEST_NAME: str = os.getenv("HR_VITON_TEST_NAME", "stylesync_hr_viton")
+    HR_VITON_FORCE_CPU: bool = os.getenv("HR_VITON_FORCE_CPU", "False").lower() == "true"
+    HR_VITON_STRICT_OFFICIAL: bool = os.getenv("HR_VITON_STRICT_OFFICIAL", "False").lower() == "true"
+    TRYON_VRAM_FALLBACK_THRESHOLD_MB: int = int(os.getenv("TRYON_VRAM_FALLBACK_THRESHOLD_MB", "24000"))
+
     # Kaggle Settings
     KAGGLE_USERNAME: str = os.getenv("KAGGLE_USERNAME", "")
     KAGGLE_KEY: str = os.getenv("KAGGLE_KEY", "")
@@ -84,9 +97,4 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE: str = os.getenv("LOG_FILE", "logs/stylesync.log")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
-
 settings = Settings()

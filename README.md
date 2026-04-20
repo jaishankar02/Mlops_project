@@ -130,6 +130,29 @@ export TRYON_TRAIN_DATASET_DIR=/path/to/train/cloth
 export IDM_VTON_LOCAL_REPO_PATH=/absolute/path/to/backend/idm_vton
 ```
 
+### HR-VITON Fallback Setup (Official Repo)
+
+To install HR-VITON in the backend (repo clone + official checkpoints), run:
+
+```bash
+cd /home/m25csa007/Mlops_project
+./scripts/setup_hr_viton_env.sh
+```
+
+This installs HR-VITON into `backend/hr_viton` and downloads checkpoints expected by
+`ml_models/tryon/hr_viton_wrapper.py`:
+- `backend/hr_viton/eval_models/weights/v0.1/mtviton.pth`
+- `backend/hr_viton/eval_models/weights/v0.1/gen.pth`
+
+If you install to a custom path, export:
+
+```bash
+export HR_VITON_LOCAL_REPO_PATH=/absolute/path/to/HR-VITON
+export HR_VITON_TOCG_CHECKPOINT=/absolute/path/to/mtviton.pth
+export HR_VITON_GEN_CHECKPOINT=/absolute/path/to/gen.pth
+export HR_VITON_ENABLED=true
+```
+
 ## MLflow and WandB
 
 - MLflow tracker is implemented in `config/mlflow_config.py`.

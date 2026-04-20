@@ -1,0 +1,6 @@
+outs:
+- md5: 62824a5f93766824e5344bece792e7d1.dir
+  size: 5248038421
+  nfiles: 123114
+  hash: md5
+  path: high_resolution_viton_zalando

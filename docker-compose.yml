@@ -1,10 +1,36 @@
-version: '3.8'
-
 services:
+  # MLflow Tracking Server
+  mlflow:
+    build: .
+    container_name: stylesync-mlflow
+    env_file:
+      - .env
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri file:/mlflow/mlruns
+      --default-artifact-root /mlflow/mlruns
+    ports:
+      - "5000:5000"
+    volumes:
+      - backend_mlruns:/mlflow/mlruns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - stylesync-network
+    restart: unless-stopped
+
   # FastAPI Backend
   backend:
     build: .
     container_name: stylesync-backend
+    env_file:
+      - .env
     command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
     ports:
       - "8001:8001"
@@ -13,7 +39,8 @@ services:
       - PORT=8001
       - DEBUG=False
       - PYTHONPATH=/app
-      - MLFLOW_TRACKING_URI=file:/app/mlruns
+      - BACKEND_SERVICE_KEY=${BACKEND_SERVICE_KEY:-stylesync-local-backend}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
       - MLFLOW_BACKEND_STORE_URI=file:/app/mlruns
       - MLFLOW_ARTIFACT_ROOT=/app/mlruns
       - WANDB_MODE=disabled
@@ -41,15 +68,26 @@ services:
       context: .
       dockerfile: Dockerfile.streamlit
     container_name: stylesync-frontend
+    env_file:
+      - .env
     ports:
       - "8501:8501"
     environment:
-      - API_URL=http://backend:8001
+      - BACKEND_SERVICE_KEY=${BACKEND_SERVICE_KEY:-stylesync-local-backend}
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=8001
+      - BACKEND_DISCOVERY_PORTS=${BACKEND_DISCOVERY_PORTS:-8001-8010,8501-8510}
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     networks:
       - stylesync-network
     restart: unless-stopped
