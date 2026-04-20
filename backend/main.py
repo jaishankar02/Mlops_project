@@ -36,6 +36,12 @@ async def lifespan(app: FastAPI):
     # MLflow initialization is handled lazily during event logging.
     get_wandb_tracker().setup_wandb()
     get_huggingface_client()
+    
+    # Initialize the recommendation engine (bootstrap index) at startup
+    from backend.routes.recommender import init_recommendation_engine
+    logger.info("Bootstrapping recommendation engine...")
+    init_recommendation_engine()
+    
     yield
     try:
         get_wandb_tracker().finish()

@@ -75,7 +75,6 @@ jobs:
           dvc pull -r origin
 
       - name: Build backend image (CI local)
-        if: false # Skipping backend build to save time
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -101,7 +100,6 @@ jobs:
         run: docker network create test-net
 
       - name: Smoke test backend container
-        if: false # Skipping backend smoke test
         run: |
           docker run -d --name backend-ci --network test-net -p 8001:8001 \
             -e WANDB_MODE=disabled \
@@ -113,12 +111,12 @@ jobs:
             -v ${{ github.workspace }}/datasets:/app/datasets:ro \
             mlops-project/backend:ci
 
-          for i in {1..30}; do
+          for i in {1..60}; do
             if curl -fsS http://127.0.0.1:8001/health >/dev/null; then
               echo "Backend health check passed"
               break
             fi
-            sleep 2
+            sleep 5
           done
 
           curl -fsS http://127.0.0.1:8001/health || true
@@ -162,7 +160,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push backend image to GHCR
-        if: false # Skipping backend build to save time
+        if: github.event_name == 'push'
         uses: docker/build-push-action@v6
         with:
           context: .
