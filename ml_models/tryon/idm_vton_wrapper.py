@@ -75,6 +75,9 @@ class IDMVTONWrapper:
             demo_str = str(self.repo_path / "gradio_demo")
             if demo_str not in sys.path:
                 sys.path.insert(0, demo_str)
+            detectron2_str = str(self.repo_path / "preprocess" / "humanparsing" / "mhp_extension" / "detectron2")
+            if detectron2_str not in sys.path:
+                sys.path.insert(0, detectron2_str)
             humanparsing_str = str(self.repo_path / "preprocess" / "humanparsing")
             if humanparsing_str not in sys.path:
                 sys.path.insert(0, humanparsing_str)

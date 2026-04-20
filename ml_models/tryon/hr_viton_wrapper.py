@@ -156,11 +156,13 @@ class HRVITONWrapper:
         demo_str = str(self.repo_path / "gradio_demo")
         preprocess_str = str(self.repo_path / "preprocess")
         humanparsing_str = str(self.repo_path / "preprocess" / "humanparsing")
+        detectron2_str = str(self.repo_path.parent / "idm_vton" / "preprocess" / "humanparsing" / "mhp_extension" / "detectron2")
         for path_str in [
             idm_repo_str,
             idm_demo_str,
             idm_preprocess_str,
             idm_humanparsing_str,
+            detectron2_str,
             repo_str,
             demo_str,
             preprocess_str,
