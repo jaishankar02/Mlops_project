@@ -39,8 +39,6 @@ gradio_client==2.4.1
 fvcore==0.1.5.post20221221
 pycocotools==2.0.11
 omegaconf==2.3.0
-addict==2.4.0
-basicsr==1.4.2
 cloudpickle==3.1.2
 future==1.0.0
 iopath==0.1.10
