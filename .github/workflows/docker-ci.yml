@@ -223,3 +223,30 @@ jobs:
           package-type: container
           min-versions-to-keep: 2
           delete-only-untagged-versions: true
+          
+      - name: Deploy to Azure VM
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/${{ github.repository_owner }}/mlops-project-backend:latest
+            docker pull ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:branch-${{ env.SAFE_BRANCH_TAG }}
+
+            docker stop backend || true
+            docker rm backend || true
+            docker stop frontend || true
+            docker rm frontend || true
+
+            docker network create mlops-net || true
+
+            docker run -d --name backend --network mlops-net -p 8001:8001 \
+              -e WANDB_MODE=disabled \
+              -e MLFLOW_TRACKING_URI=file:/app/mlruns \
+              ghcr.io/${{ github.repository_owner }}/mlops-project-backend:latest
+
+            docker run -d --name frontend --network mlops-net -p 8501:8501 \
+              -e API_URL=http://backend:8001 \
+              ghcr.io/${{ github.repository_owner }}/mlops-project-frontend:branch-${{ env.SAFE_BRANCH_TAG }}
